@@ -1,25 +1,26 @@
+import os
 import re
 import pickle
 import time
-from pathlib import Path
 import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
+from groq import Groq
 
 # Page Configuration
 st.set_page_config(
-    page_title="Tweet Sentiment & AI Insights",
+    page_title="Tweet Sentiment & Dual AI Insights",
     page_icon="⚡",
     layout="wide"
 )
 
+# --- 1. Load ML Artifacts ---
 @st.cache_resource
 def load_ml_assets():
-    project_dir = Path(__file__).resolve().parent
-    model_path = project_dir / "models" / "sentiment_model.pkl"
-    vec_path = project_dir / "models" / "vectorizer.pkl"
-
+    model_path = "models/sentiment_model.pkl" if os.path.exists("models/sentiment_model.pkl") else "../models/sentiment_model.pkl"
+    vec_path = "models/vectorizer.pkl" if os.path.exists("models/vectorizer.pkl") else "../models/vectorizer.pkl"
+    
     with open(model_path, "rb") as f:
         model = pickle.load(f)
     with open(vec_path, "rb") as f:
@@ -30,20 +31,36 @@ def load_ml_assets():
 try:
     model, vectorizer = load_ml_assets()
 except Exception as e:
-    st.error(f"Error loading model artifacts: {e}. Please ensure model files exist in 'models/' directory.")
+    st.error(f"Error loading model files: {e}. Ensure .pkl files are in 'models/'.")
     st.stop()
 
+# --- 2. Initialize API Clients ---
 @st.cache_resource
-def init_gemini_client():
+def init_ai_clients():
+    gemini_client = None
+    groq_client = None
+
+    # Gemini
     try:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        return genai.Client(api_key=api_key)
-    except Exception as e:
-        st.sidebar.warning("⚠️ Gemini API Key not found in secrets.toml.")
-        return None
+        gemini_key = st.secrets.get("GEMINI_API_KEY")
+        if gemini_key:
+            gemini_client = genai.Client(api_key=gemini_key)
+    except Exception:
+        pass
 
-client = init_gemini_client()
+    # Groq
+    try:
+        groq_key = st.secrets.get("GROQ_API_KEY")
+        if groq_key:
+            groq_client = Groq(api_key=groq_key)
+    except Exception:
+        pass
 
+    return gemini_client, groq_client
+
+gemini_client, groq_client = init_ai_clients()
+
+# --- 3. Preprocessing & Sentiment Inference ---
 def preprocess_text(text: str) -> str:
     cleaned = re.sub(r"http\S+|@\S+|#\S+|[^\w\s]", " ", text)
     return cleaned.lower().strip()
@@ -58,81 +75,89 @@ def predict_sentiment(text: str):
     confidence = float(max(probabilities))
     return sentiment, confidence
 
-def summarize_with_gemini(text: str) -> str:
-    if not client:
-        return "Gemini API key not configured."
-    try:
-        prompt = f"Provide a brief 1-2 sentence summary/explanation of what this tweet is about: \"{text}\""
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=prompt
-        )
-        
-        # Safe access check before calling .strip()
-        if response and response.text:
-            return response.text.strip()
-        else:
-            return "No text summary returned (the prompt may have triggered safety filters)."
-            
-    except APIError as e:
-        return f"Gemini API Error: {str(e)}"
-    except Exception as e:
-        return f"Summarization unavailable ({str(e)})."
+# --- 4. Resilient Multi-Provider Summarizer ---
+def generate_summary(text: str) -> tuple[str, str]:
+    """
+    Attempts summarization with Gemini first.
+    Falls back to Groq (LLaMA 3.3 70B) if rate-limited or unavailable.
+    Returns: (summary_text, provider_used)
+    """
+    prompt = f"Provide a concise 1-2 sentence summary of what this tweet is about: \"{text}\""
 
-st.title("⚡ Real-time Tweet Sentiment Analyzer & AI Summarizer")
-st.markdown("Combines a fine-tuned **Logistic Regression** model with **Gemini 2.5 Flash** for automated tweet insights.")
+    # Attempt 1: Gemini API
+    if gemini_client:
+        for gemini_model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+            try:
+                response = gemini_client.models.generate_content(
+                    model=gemini_model,
+                    contents=prompt
+                )
+                if response and response.text:
+                    return response.text.strip(), f"Gemini ({gemini_model})"
+            except Exception:
+                continue  # Fallthrough on error/rate limit
 
+    # Attempt 2: Groq LLaMA 3 Fallback
+    if groq_client:
+        try:
+            chat_completion = groq_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "You are a concise text summarizer."},
+                    {"role": "user", "content": prompt}
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.3,
+                max_tokens=100
+            )
+            summary = chat_completion.choices[0].message.content.strip()
+            return summary, "Groq (LLaMA 3.3 70B)"
+        except Exception as e:
+            return f"Groq Error: {str(e)}", "None"
 
-def set_preset(text: str) -> None:
-    """Put a selected demo into the text-area widget before its next render."""
-    st.session_state["tweet_text"] = text
+    return "Summary unavailable: Both Gemini and Groq services are unconfigured or reaching rate limits.", "None"
 
+# --- 5. Main UI ---
+st.title("⚡ Real-time Tweet Sentiment & Multi-LLM Insights")
+st.markdown("Combines a fine-tuned **Logistic Regression** model with **Gemini** & **Groq (LLaMA 3)** for resilient AI processing.")
 
-st.session_state.setdefault("tweet_text", "")
-
+# Preset Demos
 st.markdown("### Quick Preset Demos")
 col_p1, col_p2, col_p3 = st.columns(3)
-col_p1.button(
-    "Preset 1 (Positive)",
-    on_click=set_preset,
-    args=("Just tested the new firmware update on my setup! Battery life improved and it runs super smooth.",),
-)
-col_p2.button(
-    "Preset 2 (Negative)",
-    on_click=set_preset,
-    args=("The latest release completely broke my database migration. Spent 4 hours debugging with zero help.",),
-)
-col_p3.button(
-    "Preset 3 (Mixed/Complex)",
-    on_click=set_preset,
-    args=("The UI looks crisp and clean, but the subscription prices make no sense for students.",),
-)
+preset_text = ""
+
+if col_p1.button("Preset 1 (Positive)"):
+    preset_text = "Just tested the new update on my setup! Render speeds doubled and the fan stays completely silent."
+if col_p2.button("Preset 2 (Negative)"):
+    preset_text = "The latest release completely broke my production build. Spent 5 hours debugging with no response from support."
+if col_p3.button("Preset 3 (Mixed/Complex)"):
+    preset_text = "The UI design looks very modern, but the new pricing tiers make no sense for freelance developers."
 
 mode = st.radio("Select Input Mode:", ["Single Tweet Analysis", "Batch CSV Processing"], horizontal=True)
 
 if mode == "Single Tweet Analysis":
-    user_input = st.text_area(
-        "Input Tweet / Text:",
-        key="tweet_text",
-        placeholder="Type or paste text here...",
-        height=100,
-    )
+    default_text = "Just upgraded my setup with the new processor! Performance improved noticeably."
+    active_text = preset_text if preset_text else default_text
+    
+    user_input = st.text_area("Input Tweet / Text:", value=active_text, height=100)
     
     if st.button("Analyze Tweet", type="primary"):
         if not user_input.strip():
-            st.warning("Please enter text or select a preset.")
+            st.warning("Please enter text to analyze.")
         else:
-            with st.spinner("Classifying sentiment and generating AI summary..."):
+            with st.spinner("Processing local sentiment model & AI summarizer..."):
                 start_time = time.time()
                 
+                # Model inference
                 sentiment, confidence = predict_sentiment(user_input)
                 
-                summary = summarize_with_gemini(user_input)
+                # Multi-LLM Call
+                summary, provider = generate_summary(user_input)
                 
                 latency = round(time.time() - start_time, 2)
 
             st.divider()
-
+            
+            # Output Metrics
             m1, m2, m3 = st.columns(3)
             with m1:
                 color = "green" if sentiment == "POSITIVE" else "red"
@@ -143,15 +168,16 @@ if mode == "Single Tweet Analysis":
                 st.subheader(f"{confidence * 100:.1f}%")
                 st.progress(confidence)
             with m3:
-                st.markdown("**Inference Latency:**")
+                st.markdown("**Total Latency:**")
                 st.subheader(f"{latency}s")
 
+            # AI Summary Output
             st.markdown("---")
-            st.markdown("### 🤖 Gemini Executive Summary")
+            st.markdown(f"### 🤖 AI Summary *(Powered by {provider})*")
             st.info(summary)
 
 elif mode == "Batch CSV Processing":
-    uploaded_file = st.file_uploader("Upload CSV (must contain a 'text' or 'tweet' column):", type=["csv"])
+    uploaded_file = st.file_uploader("Upload CSV (must contain 'text' or 'tweet' column):", type=["csv"])
     
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
@@ -161,7 +187,7 @@ elif mode == "Batch CSV Processing":
             st.write(f"Loaded {len(df)} rows. Preview:")
             st.dataframe(df.head(3))
             
-            if st.button("Run Batch Analysis"):
+            if st.button("Run Batch Sentiment Classification"):
                 with st.spinner("Classifying dataset..."):
                     results = [predict_sentiment(str(t)) for t in df[text_col]]
                     df["Predicted_Sentiment"] = [r[0] for r in results]
@@ -169,8 +195,8 @@ elif mode == "Batch CSV Processing":
                 
                 st.success("Batch classification complete!")
                 st.dataframe(df.head(10))
-
+                
                 csv_data = df.to_csv(index=False).encode("utf-8")
-                st.download_button("Download Processed CSV", data=csv_data, file_name="classified_tweets.csv", mime="text/csv")
+                st.download_button("Download Classified CSV", data=csv_data, file_name="classified_tweets.csv", mime="text/csv")
         else:
             st.error("CSV file must contain a 'text' or 'tweet' column.")
