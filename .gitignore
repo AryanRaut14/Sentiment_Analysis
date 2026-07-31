@@ -1,0 +1,21 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+
+# Secrets 
+.streamlit/secrets.toml
+
+# Large datasets & Model Binaries
+data/
+models/
+*.csv
+*.pkl
+
+# VS Code & System files
+.vscode/
+.DS_Store
