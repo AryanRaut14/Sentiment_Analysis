@@ -109,7 +109,7 @@ def generate_summary(text: str) -> tuple[str, str]:
                 temperature=0.3,
                 max_tokens=100
             )
-            summary = chat_completion.choices[0].message.content.strip()
+            summary = chat_completion.choices[0].message.content.strip() # type: ignore
             return summary, "Groq (LLaMA 3.3 70B)"
         except Exception as e:
             return f"Groq Error: {str(e)}", "None"
