@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 1. Load ML Artifacts ---
+#1. Load ML Artifacts
 @st.cache_resource
 def load_ml_assets():
     model_path = "models/sentiment_model.pkl" if os.path.exists("models/sentiment_model.pkl") else "../models/sentiment_model.pkl"
@@ -34,7 +34,7 @@ except Exception as e:
     st.error(f"Error loading model files: {e}. Ensure .pkl files are in 'models/'.")
     st.stop()
 
-# --- 2. Initialize API Clients ---
+#2. Initialize API Clients
 @st.cache_resource
 def init_ai_clients():
     gemini_client = None
@@ -60,7 +60,7 @@ def init_ai_clients():
 
 gemini_client, groq_client = init_ai_clients()
 
-# --- 3. Preprocessing & Sentiment Inference ---
+#3. Preprocessing & Sentiment Inference
 def preprocess_text(text: str) -> str:
     cleaned = re.sub(r"http\S+|@\S+|#\S+|[^\w\s]", " ", text)
     return cleaned.lower().strip()
@@ -75,7 +75,7 @@ def predict_sentiment(text: str):
     confidence = float(max(probabilities))
     return sentiment, confidence
 
-# --- 4. Resilient Multi-Provider Summarizer ---
+#4. Resilient Multi-Provider Summarizer
 def generate_summary(text: str) -> tuple[str, str]:
     """
     Attempts summarization with Gemini first.
@@ -116,7 +116,7 @@ def generate_summary(text: str) -> tuple[str, str]:
 
     return "Summary unavailable: Both Gemini and Groq services are unconfigured or reaching rate limits.", "None"
 
-# --- 5. Main UI ---
+# 5. Main UI
 st.title("⚡ Real-time Tweet Sentiment & Multi-LLM Insights")
 st.markdown("Combines a fine-tuned **Logistic Regression** model with **Gemini** & **Groq (LLaMA 3)** for resilient AI processing.")
 
