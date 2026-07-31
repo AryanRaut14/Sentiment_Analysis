@@ -19,3 +19,6 @@ models/
 # VS Code & System files
 .vscode/
 .DS_Store
+
+.agents
+.claude
