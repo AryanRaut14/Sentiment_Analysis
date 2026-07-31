@@ -123,22 +123,22 @@ st.markdown("Combines a fine-tuned **Logistic Regression** model with **Gemini**
 # Preset Demos
 st.markdown("### Quick Preset Demos")
 col_p1, col_p2, col_p3 = st.columns(3)
-preset_text = ""
+
+default_text = "Just upgraded my setup with the new processor! Performance improved noticeably."
+if "tweet_input" not in st.session_state:
+    st.session_state.tweet_input = default_text
 
 if col_p1.button("Preset 1 (Positive)"):
-    preset_text = "Just tested the new update on my setup! Render speeds doubled and the fan stays completely silent."
+    st.session_state.tweet_input = "Just tested the new update on my setup! Render speeds doubled and the fan stays completely silent."
 if col_p2.button("Preset 2 (Negative)"):
-    preset_text = "The latest release completely broke my production build. Spent 5 hours debugging with no response from support."
+    st.session_state.tweet_input = "The latest release completely broke my production build. Spent 5 hours debugging with no response from support."
 if col_p3.button("Preset 3 (Mixed/Complex)"):
-    preset_text = "The UI design looks very modern, but the new pricing tiers make no sense for freelance developers."
+    st.session_state.tweet_input = "The UI design looks very modern, but the new pricing tiers make no sense for freelance developers."
 
 mode = st.radio("Select Input Mode:", ["Single Tweet Analysis", "Batch CSV Processing"], horizontal=True)
 
 if mode == "Single Tweet Analysis":
-    default_text = "Just upgraded my setup with the new processor! Performance improved noticeably."
-    active_text = preset_text if preset_text else default_text
-    
-    user_input = st.text_area("Input Tweet / Text:", value=active_text, height=100)
+    user_input = st.text_area("Input Tweet / Text:", value=st.session_state.tweet_input, height=100, key="tweet_input")
     
     if st.button("Analyze Tweet", type="primary"):
         if not user_input.strip():
