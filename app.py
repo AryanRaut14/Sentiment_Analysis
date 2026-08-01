@@ -5,7 +5,6 @@ import time
 import streamlit as st
 import pandas as pd
 from google import genai
-from google.genai.errors import APIError
 from groq import Groq
 
 # Page Configuration
@@ -15,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-#1. Load ML Artifacts
+# 1. Load ML Artifacts
 @st.cache_resource
 def load_ml_assets():
     model_path = "models/sentiment_model.pkl" if os.path.exists("models/sentiment_model.pkl") else "../models/sentiment_model.pkl"
@@ -34,7 +33,7 @@ except Exception as e:
     st.error(f"Error loading model files: {e}. Ensure .pkl files are in 'models/'.")
     st.stop()
 
-#2. Initialize API Clients
+# 2. Initialize API Clients
 @st.cache_resource
 def init_ai_clients():
     gemini_client = None
@@ -60,7 +59,7 @@ def init_ai_clients():
 
 gemini_client, groq_client = init_ai_clients()
 
-#3. Preprocessing & Sentiment Inference
+# 3. Preprocessing & Sentiment Inference
 def preprocess_text(text: str) -> str:
     cleaned = re.sub(r"http\S+|@\S+|#\S+|[^\w\s]", " ", text)
     return cleaned.lower().strip()
@@ -75,12 +74,11 @@ def predict_sentiment(text: str):
     confidence = float(max(probabilities))
     return sentiment, confidence
 
-#4. Resilient Multi-Provider Summarizer
+# 4. Resilient Multi-Provider Summarizer
 def generate_summary(text: str) -> tuple[str, str]:
     """
     Attempts summarization with Gemini first.
     Falls back to Groq (LLaMA 3.3 70B) if rate-limited or unavailable.
-    Returns: (summary_text, provider_used)
     """
     prompt = f"Provide a concise 1-2 sentence summary of what this tweet is about: \"{text}\""
 
@@ -95,7 +93,7 @@ def generate_summary(text: str) -> tuple[str, str]:
                 if response and response.text:
                     return response.text.strip(), f"Gemini ({gemini_model})"
             except Exception:
-                continue  # Fallthrough on error/rate limit
+                continue
 
     # Attempt 2: Groq LLaMA 3 Fallback
     if groq_client:
@@ -109,7 +107,8 @@ def generate_summary(text: str) -> tuple[str, str]:
                 temperature=0.3,
                 max_tokens=100
             )
-            summary = chat_completion.choices[0].message.content.strip() # type: ignore
+            content = chat_completion.choices[0].message.content
+            summary = str(content).strip() if content else ""
             return summary, "Groq (LLaMA 3.3 70B)"
         except Exception as e:
             return f"Groq Error: {str(e)}", "None"
@@ -126,38 +125,34 @@ col_p1, col_p2, col_p3 = st.columns(3)
 
 default_text = "Just upgraded my setup with the new processor! Performance improved noticeably."
 if "tweet_input" not in st.session_state:
-    st.session_state.tweet_input = default_text
+    st.session_state["tweet_input"] = default_text
 
 if col_p1.button("Preset 1 (Positive)"):
-    st.session_state.tweet_input = "Just tested the new update on my setup! Render speeds doubled and the fan stays completely silent."
+    st.session_state["tweet_input"] = "Just tested the new update on my setup! Render speeds doubled and the fan stays completely silent."
 if col_p2.button("Preset 2 (Negative)"):
-    st.session_state.tweet_input = "The latest release completely broke my production build. Spent 5 hours debugging with no response from support."
+    st.session_state["tweet_input"] = "The latest release completely broke my production build. Spent 5 hours debugging with no response from support."
 if col_p3.button("Preset 3 (Mixed/Complex)"):
-    st.session_state.tweet_input = "The UI design looks very modern, but the new pricing tiers make no sense for freelance developers."
+    st.session_state["tweet_input"] = "The UI design looks very modern, but the new pricing tiers make no sense for freelance developers."
 
 mode = st.radio("Select Input Mode:", ["Single Tweet Analysis", "Batch CSV Processing"], horizontal=True)
 
 if mode == "Single Tweet Analysis":
-    user_input = st.text_area("Input Tweet / Text:", value=st.session_state.tweet_input, height=100, key="tweet_input")
+    user_input = st.text_area("Input Tweet / Text:", value=st.session_state["tweet_input"], height=100)
     
     if st.button("Analyze Tweet", type="primary"):
-        if not user_input.strip():
+        if not user_input.strip(): # type: ignore
             st.warning("Please enter text to analyze.")
         else:
             with st.spinner("Processing local sentiment model & AI summarizer..."):
                 start_time = time.time()
                 
-                # Model inference
-                sentiment, confidence = predict_sentiment(user_input)
-                
-                # Multi-LLM Call
-                summary, provider = generate_summary(user_input)
+                sentiment, confidence = predict_sentiment(user_input) # type: ignore
+                summary, provider = generate_summary(user_input) # type: ignore
                 
                 latency = round(time.time() - start_time, 2)
 
             st.divider()
             
-            # Output Metrics
             m1, m2, m3 = st.columns(3)
             with m1:
                 color = "green" if sentiment == "POSITIVE" else "red"
@@ -171,7 +166,6 @@ if mode == "Single Tweet Analysis":
                 st.markdown("**Total Latency:**")
                 st.subheader(f"{latency}s")
 
-            # AI Summary Output
             st.markdown("---")
             st.markdown(f"### 🤖 AI Summary *(Powered by {provider})*")
             st.info(summary)
