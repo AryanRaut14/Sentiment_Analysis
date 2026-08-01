@@ -60,8 +60,43 @@ gemini_client, groq_client = init_ai_clients()
 
 # 3. Preprocessing & Sentiment Inference
 def preprocess_text(text: str) -> str:
-    cleaned = re.sub(r"http\S+|@\S+|#\S+|[^\w\s]", " ", text)
-    return cleaned.lower().strip()
+    if not isinstance(text, str):
+        return ""
+    
+    # 1. Lowercase and strip URLs, mentions, and hashtags
+    cleaned = re.sub(r"http\S+|@\S+|#\S+", " ", text.lower())
+    
+    # 2. Preserve contractions before stripping punctuation
+    cleaned = re.sub(r"can't", "can not", cleaned)
+    cleaned = re.sub(r"n't", " not", cleaned)
+    cleaned = re.sub(r"won't", "will not", cleaned)
+    
+    # 3. Replace non-alphanumeric characters (except spaces)
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    
+    words = cleaned.split()
+    
+    # 4. Prefix words following a negation term with "NOT_"
+    negation = False
+    processed_words = []
+    negation_words = {"not", "no", "never", "neither", "nor", "none"}
+    words_since_negation = 0
+    
+    for word in words:
+        if word in negation_words:
+            negation = True
+            words_since_negation = 0
+            processed_words.append(word)
+        elif negation:
+            processed_words.append(f"NOT_{word}")
+            words_since_negation += 1
+            # Reset negation after 3 words to avoid over-tagging
+            if words_since_negation >= 3:
+                negation = False
+        else:
+            processed_words.append(word)
+            
+    return " ".join(processed_words)
 
 def predict_sentiment(text: str):
     cleaned = preprocess_text(text)
