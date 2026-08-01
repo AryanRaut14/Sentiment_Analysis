@@ -10,7 +10,7 @@ Understanding public sentiment on social media requires both quantitative scorin
 
 1. **Custom ML Sentiment Engine:** Classifies tweets into `POSITIVE` or `NEGATIVE` sentiment along with probability confidence scores using a Logistic Regression model trained on 1.6M+ Kaggle tweets.
 2. **Dual-LLM Resilient Architecture:** Uses **Google Gemini 2.0 Flash** as the primary summarizer and automatically falls back to **Meta LLaMA 3.3 70B via Groq** if API rate limits (`429`) or traffic spikes occur.
-3. **Production Web Dashboard:** Built with **Streamlit**, supporting single-tweet testing, one-click preset demos, batch CSV dataset labeling, latency metrics, and exportable CSV results.
+3. **Production Web Dashboard:** Built with **Streamlit**, supporting single-tweet testing, three preset dropdowns with example texts, latency metrics, and AI-generated summaries.
 
 ---
 
@@ -20,7 +20,7 @@ Understanding public sentiment on social media requires both quantitative scorin
 - **TF-IDF Feature Extraction:** Transforms raw tweet text into high-dimensional unigram/bigram numerical feature vectors.
 - **Fast Local Inference:** Loads serialized binary model artifacts (`.pkl`) in milliseconds for high-throughput prediction.
 - **High-Availability AI Failover:** Zero-downtime integration combining Gemini 2.0 Flash and Groq LLaMA 3.3 70B to eliminate rate-limit bottlenecks during live demos.
-- **Batch Dataset Processing:** Upload raw CSV files, run bulk sentiment prediction with confidence scores, and download structured results.
+- **Preset Examples:** Choose from three positive, three negative, or three mixed/complex examples to quickly populate the analysis input.
 
 ---
 
