@@ -59,6 +59,10 @@ def init_ai_clients():
 gemini_client, groq_client = init_ai_clients()
 
 # 3. Preprocessing & Sentiment Inference
+MIXED_SENTIMENT_CONNECTORS = ("but", "although", "however", "though", "yet", "despite")
+POSITIVE_CUES = ("love", "great", "good", "excellent", "impressed", "better", "fast", "helpful", "easy")
+NEGATIVE_CUES = ("bad", "broken", "difficult", "frustrating", "slow", "crash", "crashes", "damaged", "late", "worse")
+
 def preprocess_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
@@ -98,14 +102,37 @@ def preprocess_text(text: str) -> str:
             
     return " ".join(processed_words)
 
-def predict_sentiment(text: str):
+def contains_mixed_sentiment_cues(text: str) -> bool:
+    """Detect explicit positive/negative contrast that a binary model can miss."""
+    words = set(re.findall(r"\b\w+\b", text.lower()))
+    has_contrast = bool(words.intersection(MIXED_SENTIMENT_CONNECTORS))
+    has_positive = bool(words.intersection(POSITIVE_CUES))
+    has_negative = bool(words.intersection(NEGATIVE_CUES))
+    return has_contrast and has_positive and has_negative
+
+def predict_sentiment(text: str, neutral_margin: float = 0.06):
     cleaned = preprocess_text(text)
     vec = vectorizer.transform([cleaned])
     prediction = model.predict(vec)[0]
     probabilities = model.predict_proba(vec)[0]
-    
-    sentiment = "POSITIVE" if prediction == 1 else "NEGATIVE"
-    confidence = float(max(probabilities))
+
+    # Keep the probability lookup correct even if the serialized model's class
+    # order differs from the usual [0, 1].
+    class_probabilities = dict(zip(model.classes_, probabilities))
+    prob_pos = float(class_probabilities.get(1, probabilities[-1]))
+    prob_neg = float(class_probabilities.get(0, probabilities[0]))
+    confidence = float(max(prob_pos, prob_neg))
+
+    # Neutral/mixed thresholding has two signals:
+    # 1) a configurable uncertainty band around a 50/50 prediction; and
+    # 2) explicit contrast language containing both positive and negative cues.
+    lower_bound = 0.5 - neutral_margin
+    upper_bound = 0.5 + neutral_margin
+    if lower_bound <= prob_pos <= upper_bound or contains_mixed_sentiment_cues(text):
+        sentiment = "NEUTRAL / MIXED"
+    else:
+        sentiment = "POSITIVE" if prediction == 1 else "NEGATIVE"
+
     return sentiment, confidence
 
 # 4. Resilient Multi-Provider Summarizer
@@ -151,7 +178,7 @@ def generate_summary(text: str) -> tuple[str, str]:
 
 # 5. Main UI
 st.title("⚡ Real-time Tweet Sentiment & Multi-LLM Insights")
-st.markdown("Combines a fine-tuned **Logistic Regression** model with **Gemini** & **Groq (LLaMA 3)** for resilient AI processing.")
+st.markdown("Combines a fine-tuned **calibrated LinearSVC** model with **neutral/mixed thresholding**, Gemini, and Groq (LLaMA 3).")
 
 # Preset Demos
 st.markdown("### Quick Preset Demos")
@@ -166,14 +193,18 @@ preset_options = {
         "Really impressed with the new feature set—simple to use, fast, and exactly what I needed.",
     ],
     "Negative": [
-        "The latest release completely broke my production build. Spent 5 hours debugging with no response from support.",
-        "After the update, the app crashes every time I try to save my work. Very frustrating.",
-        "The product arrived late and damaged, and customer service has not replied to my messages.",
+        "I hate this update. It is terrible, broken, and completely ruined my production build.",
+        "Worst app I have used. Constant crashes, terrible performance, and a completely useless experience.",
+        "The product arrived damaged and late. The customer service is terrible and useless.",
     ],
-    "Mixed / Complex": [
-        "The UI design looks very modern, but the new pricing tiers make no sense for freelance developers.",
+    "Neutral / Mixed": [
+        "The UI design looks modern and great, but the new pricing tiers are bad for freelance developers.",
         "Performance is noticeably better, although setting everything up was far more difficult than expected.",
-        "I love the new capabilities, but the frequent notifications are becoming distracting.",
+        "I love the new capabilities, but the frequent notifications are bad and distracting.",
+        "The support staff were helpful and fast, but the product itself is slow and difficult to use.",
+        "This update has great new features, yet the battery life is worse and the app crashes.",
+        "The design is excellent and easy to navigate, although the subscription cost is bad.",
+        "I am impressed by the speed, but the broken search feature makes the experience frustrating.",
     ],
 }
 
@@ -197,14 +228,29 @@ for column, (sentiment_type, options) in zip((col_p1, col_p2, col_p3), preset_op
 
 user_input = st.text_area("Input Tweet / Text:", key="tweet_input", height=100)
 
-if st.button("Analyze Tweet", type="primary"):
+# Keep the threshold next to the action it controls instead of hiding it in a
+# sidebar, so preset examples can be tuned and re-analysed in one place.
+analyze_column, margin_column, _ = st.columns([1, 2, 2])
+with analyze_column:
+    analyze_clicked = st.button("Analyze Tweet", type="primary", use_container_width=True)
+with margin_column:
+    neutral_margin = st.slider(
+        "Neutral/mixed uncertainty margin",
+        min_value=0.01,
+        max_value=0.20,
+        value=0.06,
+        step=0.01,
+        help="Marks predictions close to 50% as NEUTRAL / MIXED. At 6%, this is a 44–56% positive-probability range.",
+    )
+
+if analyze_clicked:
     if not user_input.strip():
         st.warning("Please enter text to analyze.")
     else:
         with st.spinner("Processing local sentiment model & AI summarizer..."):
             start_time = time.time()
 
-            sentiment, confidence = predict_sentiment(user_input)
+            sentiment, confidence = predict_sentiment(user_input, neutral_margin)
             summary, provider = generate_summary(user_input)
             
             latency = round(time.time() - start_time, 2)
@@ -213,7 +259,7 @@ if st.button("Analyze Tweet", type="primary"):
         
         m1, m2, m3 = st.columns(3)
         with m1:
-            color = "green" if sentiment == "POSITIVE" else "red"
+            color = {"POSITIVE": "green", "NEGATIVE": "red"}.get(sentiment, "orange")
             st.markdown("**Predicted Sentiment:**")
             st.subheader(f":{color}[{sentiment}]")
         with m2:

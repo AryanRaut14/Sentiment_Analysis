@@ -9,8 +9,9 @@ An end-to-end, production-grade NLP application combining an optimized **Calibra
 Understanding public sentiment on social media requires both quantitative scoring (positive vs. negative classification) and qualitative understanding (what the tweet is actually discussing). This project bridges classic Machine Learning with modern Generative AI:
 
 1. **Custom ML Sentiment Engine:** Classifies tweets into `POSITIVE` or `NEGATIVE` sentiment with calibrated probability confidence scores using a LinearSVC model trained on 1.6M+ Kaggle tweets.
-2. **Dual-LLM Resilient Architecture:** Uses **Google Gemini 2.0 Flash** as the primary summarizer and automatically falls back to **Meta LLaMA 3.3 70B via Groq** if API rate limits (`429`) or traffic spikes occur.
-3. **Production Web Dashboard:** Built with **Streamlit**, supporting single-tweet testing, curated preset dropdowns for Positive/Negative/Mixed examples, latency tracking, and AI summaries.
+2. **Neutral / Mixed Thresholding:** Marks uncertain predictions near 50% probability as `NEUTRAL / MIXED`; the uncertainty margin is adjustable in the sidebar (default: 44–56%). It also recognizes explicit contrast phrasing with positive and negative cues, such as “I love the features, but the app keeps crashing.”
+3. **Dual-LLM Resilient Architecture:** Uses **Google Gemini 2.0 Flash** as the primary summarizer and automatically falls back to **Meta LLaMA 3.3 70B via Groq** if API rate limits (`429`) or traffic spikes occur.
+4. **Production Web Dashboard:** Built with **Streamlit**, supporting single-tweet testing, curated preset dropdowns for Positive/Negative/Mixed examples, latency tracking, and AI summaries.
 
 ---
 
